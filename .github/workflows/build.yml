@@ -5,10 +5,15 @@ name: "CI — Build, Scan & Push"
 on:
   push:
     branches: [main, "feature/**", "hotfix/**"]
-    paths: ["services/**"]
+    paths:
+      - "services/**"
+      - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
-    paths: ["services/**"]
+    paths:
+      - "services/**"
+      - ".github/workflows/build.yml"
+
   workflow_dispatch:
     inputs:
       service:
