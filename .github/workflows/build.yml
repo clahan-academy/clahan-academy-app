@@ -6,12 +6,26 @@ on:
   push:
     branches: [main, "feature/**", "hotfix/**"]
     paths:
-      - "services/**"
+      - "frontend-service/**"
+      - "auth-service/**"
+      - "admin-service/**"
+      - "student-service/**"
+      - "exam-service/**"
+      - "proctoring-service/**"
+      - "notification-service/**"
+      - "ai-service/**"
       - ".github/workflows/build.yml"
   pull_request:
     branches: [main]
     paths:
-      - "services/**"
+      - "frontend-service/**"
+      - "auth-service/**"
+      - "admin-service/**"
+      - "student-service/**"
+      - "exam-service/**"
+      - "proctoring-service/**"
+      - "notification-service/**"
+      - "ai-service/**"
       - ".github/workflows/build.yml"
 
   workflow_dispatch:
@@ -45,30 +59,30 @@ jobs:
           fetch-depth: 0
 
       - name: Detect changed services
-        id: detect
-        run: |
-          # Full service map
-          declare -A SERVICE_MAP=(
-            ["frontend"]="services/frontend-service:node"
-            ["auth"]="services/auth-service:node"
-            ["admin"]="services/admin-service:node"
-            ["student"]="services/student-service:node"
-            ["exam"]="services/exam-service:node"
-            ["proctoring"]="services/proctoring-service:node"
-            ["notification"]="services/notification-service:node"
-            ["ai"]="services/ai-service:python"
-          )
-          
-          ALL_SERVICES='[
-            {"service":"frontend","directory":"services/frontend-service","language":"node"},
-            {"service":"auth","directory":"services/auth-service","language":"node"},
-            {"service":"admin","directory":"services/admin-service","language":"node"},
-            {"service":"student","directory":"services/student-service","language":"node"},
-            {"service":"exam","directory":"services/exam-service","language":"node"},
-            {"service":"proctoring","directory":"services/proctoring-service","language":"node"},
-            {"service":"notification","directory":"services/notification-service","language":"node"},
-            {"service":"ai","directory":"services/ai-service","language":"python"}
-          ]'
+         id: detect
+         run: |
+           # Full service map
+           declare -A SERVICE_MAP=(
+             ["frontend"]="frontend-service:node"
+             ["auth"]="auth-service:node"
+             ["admin"]="admin-service:node"
+             ["student"]="student-service:node"
+             ["exam"]="exam-service:node"
+             ["proctoring"]="proctoring-service:node"
+             ["notification"]="notification-service:node"
+             ["ai"]="ai-service:python"
+           )
+           
+           ALL_SERVICES='[
+             {"service":"frontend","directory":"frontend-service","language":"node"},
+             {"service":"auth","directory":"auth-service","language":"node"},
+             {"service":"admin","directory":"admin-service","language":"node"},
+             {"service":"student","directory":"student-service","language":"node"},
+             {"service":"exam","directory":"exam-service","language":"node"},
+             {"service":"proctoring","directory":"proctoring-service","language":"node"},
+             {"service":"notification","directory":"notification-service","language":"node"},
+             {"service":"ai","directory":"ai-service","language":"python"}
+           ]'
           
           # Manual trigger
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
@@ -175,8 +189,9 @@ jobs:
           args: >
             -Dsonar.projectKey=clahan-academy
             -Dsonar.organization=clahan-academy
-            -Dsonar.sources=services
+            -Dsonar.sources=.
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/__pycache__/**,**/venv/**,**/*.test.ts
+
 
   snyk:
     name: "🔒 Snyk — ${{ matrix.service }}"
