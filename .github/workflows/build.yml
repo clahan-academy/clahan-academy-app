@@ -24,7 +24,7 @@ permissions:
 
 env:
   ACR_REGISTRY: acrclahanacademy.azurecr.io
-  KV_NAME: kv-clahan-academy
+  KV_NAME: kv-cl06211355
 
 jobs:
   detect-changes:
