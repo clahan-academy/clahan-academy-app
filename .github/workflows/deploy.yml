@@ -13,6 +13,9 @@ permissions:
   id-token: write
   contents: read
 
+env:
+  KV_NAME: kv-cl06211355
+
 jobs:
   deploy:
     name: "Deploy to AKS"
@@ -32,7 +35,35 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get AKS credentials via az aks command invoke
+      - name: Fetch SMTP details for notifications
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
+      - name: Send Deployment Started Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: "Clahan Academy - Deployment Started"
+          to: ${{ env.SMTP_FROM }}
+          from: Clahan Academy CD Pipeline
+          body: |
+            A new deployment has been triggered and is initiating for clahaanacademy.online.
+
+            Triggered By : ${{ github.actor }}
+            Branch       : ${{ github.ref_name }}
+            Commit       : ${{ github.sha }}
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Get AKS credentials
         run: |
           az aks get-credentials \
             --resource-group rg-clahan-academy \
@@ -92,8 +123,45 @@ jobs:
             fi
           done
 
-      - name: Deployment summary
-        run: |
-          echo "✅ Deployment complete"
-          echo "🌐 Application URL: https://clahaanacademy.online"
-          echo "📊 Namespace: clahan-academy"
+      - name: Send Deployment Success Email
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: "Clahan Academy CD Success - Production Deployed"
+          to: ${{ env.SMTP_FROM }}
+          from: Clahan Academy CD Pipeline
+          body: |
+            The production deployment for clahaanacademy.online completed successfully!
+
+            Triggered By : ${{ github.actor }}
+            Branch       : ${{ github.ref_name }}
+            Commit       : ${{ github.sha }}
+
+            Application URL: https://clahaanacademy.online
+            Namespace: clahan-academy
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Send Deployment Failure Email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: "Clahan Academy CD Failed - Deployment Failed"
+          to: ${{ env.SMTP_FROM }}
+          from: Clahan Academy CD Pipeline
+          body: |
+            The production deployment for clahaanacademy.online has FAILED.
+
+            Triggered By : ${{ github.actor }}
+            Branch       : ${{ github.ref_name }}
+            Commit       : ${{ github.sha }}
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
