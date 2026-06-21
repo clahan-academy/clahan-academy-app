@@ -13,8 +13,6 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  KV_NAME: ${{ secrets.AZURE_KEYVAULT_NAME || 'kv-clahan-65bf2554' }}
 
 jobs:
   deploy:
@@ -35,24 +33,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Fetch SMTP details for notifications
-        run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
-
       - name: Send Deployment Started Email
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
           subject: "Clahan Academy - Deployment Started"
-          to: ${{ env.SMTP_FROM }}
+          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
           from: Clahan Academy CD Pipeline
           body: |
             A new deployment has been triggered and is initiating for clahaanacademy.online.
@@ -129,10 +118,10 @@ jobs:
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
           subject: "Clahan Academy CD Success - Production Deployed"
-          to: ${{ env.SMTP_FROM }}
+          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
           from: Clahan Academy CD Pipeline
           body: |
             The production deployment for clahaanacademy.online completed successfully!
@@ -152,10 +141,10 @@ jobs:
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASS }}
           subject: "Clahan Academy CD Failed - Deployment Failed"
-          to: ${{ env.SMTP_FROM }}
+          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
           from: Clahan Academy CD Pipeline
           body: |
             The production deployment for clahaanacademy.online has FAILED.
