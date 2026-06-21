@@ -42,7 +42,7 @@ permissions:
   pull-requests: write
 
 env:
-  ACR_REGISTRY: acrclahanacademy.azurecr.io
+  ACR_REGISTRY: ${{ secrets.AZURE_ACR_REGISTRY || 'acrclahan65bf2554.azurecr.io' }}
   KV_NAME: ${{ secrets.AZURE_KEYVAULT_NAME || 'kv-clahan-65bf2554' }}
 
 jobs:
