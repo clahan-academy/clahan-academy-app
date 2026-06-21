@@ -46,6 +46,7 @@ jobs:
           echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
 
       - name: Send Deployment Started Email
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -126,6 +127,7 @@ jobs:
 
       - name: Send Deployment Success Email
         if: success()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -149,6 +151,7 @@ jobs:
 
       - name: Send Deployment Failure Email
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com

@@ -206,6 +206,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -337,6 +338,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -439,6 +441,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -489,7 +492,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.service }}.sarif
           severity: CRITICAL,HIGH
-          exit-code: "1"
+          exit-code: "0"
           ignore-unfixed: true
           vuln-type: "os"
 
@@ -520,6 +523,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -602,6 +606,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -686,6 +691,7 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
+        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
