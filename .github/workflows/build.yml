@@ -42,9 +42,9 @@ permissions:
   pull-requests: write
 
 env:
-  ACR_REGISTRY: ${{ github.ref_name == 'main' && 'acrclahan65bf2554prod.azurecr.io' || 'acrclahan65bf2554.azurecr.io' }}
+  ACR_REGISTRY: ${{ github.ref_name == 'main' && 'acrclahan65bf2554.azurecr.io' || 'acrclahan65bf2554dev.azurecr.io' }}
   KV_NAME: ${{ github.ref_name == 'main' && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
-  ACR_NAME: ${{ github.ref_name == 'main' && 'acrclahan65bf2554prod' || 'acrclahan65bf2554' }}
+  ACR_NAME: ${{ github.ref_name == 'main' && 'acrclahan65bf2554' || 'acrclahan65bf2554dev' }}
 
 jobs:
   detect-changes:
