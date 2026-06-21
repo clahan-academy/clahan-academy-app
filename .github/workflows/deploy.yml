@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  KV_NAME: kv-cl06211355
+  KV_NAME: ${{ secrets.AZURE_KEYVAULT_NAME || 'kv-clahan-65bf2554' }}
 
 jobs:
   deploy:
@@ -66,7 +66,7 @@ jobs:
       - name: Get AKS credentials
         run: |
           az aks get-credentials \
-            --resource-group rg-clahan-academy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-clahan-dev' }} \
             --name aks-clahan-academy \
             --overwrite-existing
 
@@ -79,14 +79,14 @@ jobs:
       - name: Check ArgoCD sync status
         run: |
           az aks command invoke \
-            --resource-group rg-clahan-academy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-clahan-dev' }} \
             --name aks-clahan-academy \
             --command "kubectl get application clahan-academy -n argocd"
 
       - name: Trigger ArgoCD sync
         run: |
           az aks command invoke \
-            --resource-group rg-clahan-academy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-clahan-dev' }} \
             --name aks-clahan-academy \
             --command "kubectl annotate application clahan-academy \
               -n argocd \
@@ -96,7 +96,7 @@ jobs:
       - name: Wait for rollout
         run: |
           az aks command invoke \
-            --resource-group rg-clahan-academy \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP || 'rg-clahan-dev' }} \
             --name aks-clahan-academy \
             --command "kubectl rollout status deployment/clahan-frontend \
               -n clahan-academy \

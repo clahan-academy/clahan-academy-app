@@ -43,7 +43,7 @@ permissions:
 
 env:
   ACR_REGISTRY: acrclahanacademy.azurecr.io
-  KV_NAME: kv-cl06211355
+  KV_NAME: ${{ secrets.AZURE_KEYVAULT_NAME || 'kv-clahan-65bf2554' }}
 
 jobs:
   detect-changes:
