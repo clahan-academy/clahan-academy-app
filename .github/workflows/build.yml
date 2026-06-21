@@ -548,7 +548,6 @@ jobs:
     if: |
       needs.detect-changes.outputs.has_changes == 'true' &&
       needs.trivy.result == 'success' &&
-      github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request'
     strategy:
       fail-fast: false
@@ -630,7 +629,6 @@ jobs:
     needs: [detect-changes, push]
     if: |
       needs.detect-changes.outputs.has_changes == 'true' &&
-      github.ref == 'refs/heads/main' &&
       github.event_name != 'pull_request'
     strategy:
       fail-fast: false
