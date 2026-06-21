@@ -308,7 +308,7 @@ jobs:
             type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=https://github.com/M-VIGNESH3/clahan-academy
+            org.opencontainers.image.source=https://github.com/clahan-academy/clahan-academy-app
             org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
 
       - name: Save image for Trivy
