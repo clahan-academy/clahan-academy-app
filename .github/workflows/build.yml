@@ -656,14 +656,14 @@ jobs:
 
       - name: Update image tag in Helm values
         run: |
-          SHA=$(git rev-parse --short HEAD)
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           VALUES="clahan-academy-helm/clahan-academy/values.yaml"
           yq eval ".${{ matrix.service }}.image.tag = \"${SHA}\"" -i ${VALUES}
           echo "✅ Updated ${{ matrix.service }} → ${SHA}"
 
       - name: Commit and push
         run: |
-          SHA=$(git rev-parse --short HEAD)
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           cd clahan-academy-helm
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
