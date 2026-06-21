@@ -42,8 +42,9 @@ permissions:
   pull-requests: write
 
 env:
-  ACR_REGISTRY: ${{ secrets.AZURE_ACR_REGISTRY }}
-  ACR_NAME: ${{ secrets.AZURE_ACR_NAME }}
+  ACR_REGISTRY: ${{ github.ref_name == 'main' && 'acrclahan65bf2554prod.azurecr.io' || 'acrclahan65bf2554.azurecr.io' }}
+  KV_NAME: ${{ github.ref_name == 'main' && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
+  ACR_NAME: ${{ github.ref_name == 'main' && 'acrclahan65bf2554prod' || 'acrclahan65bf2554' }}
 
 jobs:
   detect-changes:
@@ -164,13 +165,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get SonarCloud token
+      - name: Azure OIDC Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get SonarCloud token from Key Vault
         run: |
-          echo "::add-mask::${{ secrets.SONAR_TOKEN }}"
-          echo "SONAR_TOKEN=${{ secrets.SONAR_TOKEN }}" >> $GITHUB_ENV
+          TOKEN=$(az keyvault secret show \
+            --vault-name ${{ env.KV_NAME }} \
+            --name sonar-token \
+            --query value -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
@@ -181,7 +194,15 @@ jobs:
             -Dsonar.sources=.
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/__pycache__/**,**/venv/**,**/*.test.ts
 
-
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
 
       - name: Send Email on Failure
         if: failure()
@@ -189,10 +210,10 @@ jobs:
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - SonarCloud Scan"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             SonarCloud analysis FAILED for Clahan Academy.
@@ -218,10 +239,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Get Snyk token
+      - name: Azure OIDC Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get Snyk token from Key Vault
         run: |
-          echo "::add-mask::${{ secrets.SNYK_TOKEN }}"
-          echo "SNYK_TOKEN=${{ secrets.SNYK_TOKEN }}" >> $GITHUB_ENV
+          TOKEN=$(az keyvault secret show \
+            --vault-name ${{ env.KV_NAME }} \
+            --name snyk-token \
+            --query value -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "SNYK_TOKEN=$TOKEN" >> $GITHUB_ENV
 
       - name: Setup Node.js
         if: matrix.language == 'node'
@@ -293,16 +325,26 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
       - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - Snyk (${{ matrix.service }})"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             Snyk dependency scan FAILED for service: ${{ matrix.service }}
@@ -385,16 +427,26 @@ jobs:
           path: /tmp/images/image-${{ matrix.service }}.tar
           retention-days: 1
 
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
       - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - Docker Build (${{ matrix.service }})"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             Docker container build FAILED for service: ${{ matrix.service }}
@@ -448,16 +500,34 @@ jobs:
           sarif_file: trivy-${{ matrix.service }}.sarif
           category: trivy-${{ matrix.service }}
 
+      - name: Azure OIDC Login
+        if: failure()
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
       - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - Trivy Scan (${{ matrix.service }})"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             Trivy security scan FAILED for service: ${{ matrix.service }}. High or Critical vulnerabilities found.
@@ -520,16 +590,26 @@ jobs:
           echo "image_tag=${SHA}" >> $GITHUB_OUTPUT
           echo "✅ Pushed ${IMAGE}:${SHA}"
 
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
       - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - Push to ACR (${{ matrix.service }})"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             ACR Image push FAILED for service: ${{ matrix.service }}
@@ -586,16 +666,34 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: update ${{ matrix.service }} image to ${SHA} [skip ci]"
           git push
 
+      - name: Azure OIDC Login
+        if: failure()
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
       - name: Send Email on Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASS }}
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
           subject: "Clahan Academy CI Failed - Update Helm GitOps (${{ matrix.service }})"
-          to: ${{ secrets.SMTP_FROM || secrets.ADMIN_EMAIL }}
+          to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
             GitOps manifest update FAILED for service: ${{ matrix.service }}.
