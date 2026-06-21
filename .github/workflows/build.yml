@@ -700,37 +700,4 @@ jobs:
             Author : ${{ github.actor }}
             Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-  scan-summary:
-    name: "📊 PR Scan Summary"
-    runs-on: ubuntu-latest
-    needs: [sonarcloud, snyk, trivy]
-    if: always()
-    steps:
-      - name: Comment PR with results
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const sonar = '${{ needs.sonarcloud.result }}';
-            const snyk = '${{ needs.snyk.result }}';
-            const trivy = '${{ needs.trivy.result }}';
-            const status = (r) => r === 'success' ? '✅ PASSED' : (r === 'cancelled' || r === 'skipped' ? '⚠️ SKIPPED' : '❌ FAILED');
-            const allPassed = sonar === 'success' && snyk === 'success' && trivy === 'success';
-            const body = [
-              '## Clahan Academy CI Scan Results',
-              '',
-              '| Check | Status |',
-              '|-------|--------|',
-              `| SonarCloud Code Quality | ${status(sonar)} |`,
-              `| Snyk Dependencies | ${status(snyk)} |`,
-              `| Trivy Container Scan | ${status(trivy)} |`,
-              '',
-              allPassed
-                ? 'All checks passed. Safe to build and deploy!'
-                : 'One or more security/quality checks failed. Please fix before merging.'
-            ].join('\n');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+
