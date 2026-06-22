@@ -539,6 +539,10 @@ jobs:
                 ? 'All checks passed. Safe to merge.'
                 : 'One or more checks failed. Fix issues before merging.'
             ].join('\n');
+            if (!context.issue.number) {
+              console.log('No issue/PR number found. Skipping comment creation.');
+              return;
+            }
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
