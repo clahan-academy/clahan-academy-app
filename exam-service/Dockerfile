@@ -24,4 +24,4 @@ USER node
 
 ENV PORT=4004
 EXPOSE 4004
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/secrets-loader.js"]

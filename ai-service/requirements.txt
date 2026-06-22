@@ -8,3 +8,5 @@ opencv-python-headless==4.9.0.80
 insightface==1.0.1
 scikit-image>=0.20.0
 python-dotenv==1.0.1
+azure-identity==1.15.0
+azure-keyvault-secrets==4.8.0

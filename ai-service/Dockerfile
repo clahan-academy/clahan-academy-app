@@ -36,7 +36,7 @@ COPY --from=builder /app/haarcascade_frontalface_default.xml ./
 COPY --from=builder /app/haarcascade_profileface.xml ./
 
 # Copy application files
-COPY yolov8n.onnx main.py ./
+COPY yolov8n.onnx main.py secrets_loader.py ./
 
 # Create a non-root user and set permissions
 RUN groupadd -g 1000 appgroup && \
@@ -46,4 +46,4 @@ USER appuser
 
 ENV PORT=8000
 EXPOSE 8000
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "secrets_loader.py"]
