@@ -5,6 +5,12 @@ name: CD - Build Push and Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Service to deploy (all/frontend-service/auth-service/admin-service/student-service/exam-service/proctoring-service/notification-service/ai-service)"
+        required: false
+        default: "all"
 
 permissions:
   id-token: write
@@ -16,9 +22,93 @@ env:
   KV_NAME: kv-clahan-prod
 
 jobs:
+  detect-changes:
+    name: "🔍 Detect Changed Services"
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.detect.outputs.matrix }}
+      has_changes: ${{ steps.detect.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed services
+        id: detect
+        run: |
+          ALL_SERVICES='[
+            {"service":"frontend-service","directory":"frontend-service","language":"node","image_name":"clahan-frontend"},
+            {"service":"auth-service","directory":"auth-service","language":"node","image_name":"clahan-auth"},
+            {"service":"admin-service","directory":"admin-service","language":"node","image_name":"clahan-admin"},
+            {"service":"student-service","directory":"student-service","language":"node","image_name":"clahan-student"},
+            {"service":"exam-service","directory":"exam-service","language":"node","image_name":"clahan-exam"},
+            {"service":"proctoring-service","directory":"proctoring-service","language":"node","image_name":"clahan-proctoring"},
+            {"service":"notification-service","directory":"notification-service","language":"node","image_name":"clahan-notification"},
+            {"service":"ai-service","directory":"ai-service","language":"python","image_name":"clahan-ai"}
+          ]'
+
+          # Manual trigger workflow_dispatch
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            INPUT="${{ github.event.inputs.service }}"
+            if [ "$INPUT" == "all" ] || [ -z "$INPUT" ]; then
+              MATRIX=$(echo $ALL_SERVICES | jq -c '{"include": .}')
+              echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "✅ Manual trigger: all services"
+              exit 0
+            else
+              ENTRY=$(echo $ALL_SERVICES | jq -c \
+                --arg svc "$INPUT" \
+                '[.[] | select(.service == $svc)]')
+              if [ "$(echo $ENTRY | jq length)" == "0" ]; then
+                echo "❌ Service '$INPUT' not found"
+                echo "has_changes=false" >> $GITHUB_OUTPUT
+                exit 1
+              fi
+              MATRIX=$(echo $ENTRY | jq -c '{"include": .}')
+              echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+              echo "has_changes=true" >> $GITHUB_OUTPUT
+              echo "✅ Manual trigger: $INPUT only"
+              exit 0
+            fi
+          fi
+
+          # Auto detect from git diff (on push to main)
+          CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only HEAD)
+
+          echo "Changed files:"
+          echo "$CHANGED"
+
+          # Determine which services have changes or if the workflows changed
+          CHANGED_SERVICES=()
+          for SVC in frontend-service auth-service admin-service student-service exam-service proctoring-service notification-service ai-service; do
+            DIR=$(echo $ALL_SERVICES | jq -r --arg s "$SVC" '.[] | select(.service==$s) | .directory')
+            LANG=$(echo $ALL_SERVICES | jq -r --arg s "$SVC" '.[] | select(.service==$s) | .language')
+            IMG=$(echo $ALL_SERVICES | jq -r --arg s "$SVC" '.[] | select(.service==$s) | .image_name')
+
+            if echo "$CHANGED" | grep -q "^${DIR}/" || echo "$CHANGED" | grep -q "^\.github/workflows/"; then
+              CHANGED_SERVICES+=("{\"service\":\"${SVC}\",\"directory\":\"${DIR}\",\"language\":\"${LANG}\",\"image_name\":\"${IMG}\"}")
+              echo "✅ Service changed: $SVC"
+            fi
+          done
+
+          if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
+            echo "ℹ️ No service changes detected"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          else
+            JSON_ARRAY=$(printf '%s,' "${CHANGED_SERVICES[@]}" | sed 's/,$//')
+            MATRIX="{\"include\":[$JSON_ARRAY]}"
+            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "✅ ${#CHANGED_SERVICES[@]} service(s) changed"
+          fi
+
   generate-version:
     name: Generate Semantic Version
     runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
     outputs:
       semantic_tag: ${{ steps.semver.outputs.new_tag }}
       sha_tag: ${{ steps.sha.outputs.sha_tag }}
@@ -54,26 +144,11 @@ jobs:
   build-and-push:
     name: Build and Push - ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: generate-version
+    needs: [detect-changes, generate-version]
+    if: needs.detect-changes.outputs.has_changes == 'true'
     strategy:
-      matrix:
-        include:
-          - service: frontend-service
-            image_name: clahan-frontend
-          - service: auth-service
-            image_name: clahan-auth
-          - service: admin-service
-            image_name: clahan-admin
-          - service: student-service
-            image_name: clahan-student
-          - service: exam-service
-            image_name: clahan-exam
-          - service: proctoring-service
-            image_name: clahan-proctoring
-          - service: notification-service
-            image_name: clahan-notification
-          - service: ai-service
-            image_name: clahan-ai
+      fail-fast: false
+      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -163,7 +238,8 @@ jobs:
   approval-gate:
     name: Approval Gate - Production
     runs-on: ubuntu-latest
-    needs: [generate-version, build-and-push]
+    needs: [detect-changes, generate-version, build-and-push]
+    if: needs.detect-changes.outputs.has_changes == 'true'
     environment: production
     steps:
       - name: Azure OIDC Login
@@ -221,7 +297,8 @@ jobs:
   update-helm:
     name: Update Helm Manifests
     runs-on: ubuntu-latest
-    needs: [generate-version, build-and-push, approval-gate]
+    needs: [detect-changes, generate-version, build-and-push, approval-gate]
+    if: needs.detect-changes.outputs.has_changes == 'true'
     steps:
       - name: Checkout helm repo
         uses: actions/checkout@v4
@@ -248,14 +325,14 @@ jobs:
           echo "SHA tag     : ${SHA_TAG}"
 
           VALUES="clahan-academy/values.yaml"
-          yq -i ".frontend.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".auth.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".admin.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".student.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".exam.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".proctoring.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".notification.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-          yq -i ".ai.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+
+          # Loop through only the changed services and update their tags dynamically
+          SERVICES=$(echo '${{ needs.detect-changes.outputs.matrix }}' | jq -c '.include[]')
+          for SVC_ENTRY in $SERVICES; do
+            HELM_KEY=$(echo $SVC_ENTRY | jq -r '.service' | sed 's/-service//')
+            yq -i ".${HELM_KEY}.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+            echo "✅ Updated ${HELM_KEY} to ${SEMANTIC_TAG}"
+          done
 
           echo "Updated values.yaml:"
           cat ${VALUES}
