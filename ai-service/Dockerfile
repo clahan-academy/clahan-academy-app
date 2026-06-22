@@ -1,5 +1,5 @@
 # Stage 1: Build virtual environment and download models
-FROM python:3.10-slim AS builder
+FROM python:3.10-slim-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -18,7 +18,7 @@ urllib.request.urlretrieve('https://raw.githubusercontent.com/opencv/opencv/mast
 urllib.request.urlretrieve('https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_profileface.xml', 'haarcascade_profileface.xml')"
 
 # Stage 2: Runner
-FROM python:3.10-slim AS runner
+FROM python:3.10-slim-bookworm AS runner
 # Upgrade OS packages to address CVEs in Debian base image
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
