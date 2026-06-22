@@ -95,7 +95,7 @@ from insightface.app import FaceAnalysis
 # Initialize InsightFace
 insight_face_app = None
 try:
-    insight_face_app = FaceAnalysis(name='buffalo_s', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+    insight_face_app = FaceAnalysis(name='buffalo_s', root='/app/.insightface', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
     insight_face_app.prepare(ctx_id=-1, det_size=(640, 640))
     logger.info("InsightFace FaceAnalysis initialized successfully.")
 except Exception as e:
