@@ -1,33 +1,82 @@
 # .github/workflows/deploy.yml
 
-name: "CD — Deploy via ArgoCD"
+name: CD - Build Push and Deploy
 
 on:
-  workflow_run:
-    workflows: ["CI — Build, Scan & Push"]
-    types: [completed]
+  push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
 
 env:
-  KV_NAME: ${{ github.ref_name == 'main' && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
-  AZURE_RESOURCE_GROUP: ${{ github.ref_name == 'main' && 'rg-clahan-prod' || 'rg-clahan-dev' }}
+  ACR_REGISTRY: acrclahan65bf2554.azurecr.io
+  ACR_NAME: acrclahan65bf2554
+  KV_NAME: kv-clahan-prod
 
 jobs:
-  deploy:
-    name: "Deploy to AKS"
+  generate-version:
+    name: Generate Semantic Version
     runs-on: ubuntu-latest
-    if: |
-      github.event.workflow_run.conclusion == 'success' ||
-      github.event_name == 'workflow_dispatch'
-    environment: ${{ github.ref_name == 'main' && 'production' || 'infrastructure' }}
-
+    outputs:
+      semantic_tag: ${{ steps.semver.outputs.new_tag }}
+      sha_tag: ${{ steps.sha.outputs.sha_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate SHA tag
+        id: sha
+        run: |
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "sha_tag=prod-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "SHA tag: prod-${SHORT_SHA}"
+
+      - name: Generate Semantic Version
+        id: semver
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          tag_prefix: "v"
+          default_bump: patch
+          initial_version: "1.0.0"
+          custom_release_rules: "feat:minor:Features,fix:patch:Fixes,breaking:major:Breaking Changes"
+          dry_run: false
+
+      - name: Print tags
+        run: |
+          echo "Semantic tag: ${{ steps.semver.outputs.new_tag }}"
+          echo "SHA tag: ${{ steps.sha.outputs.sha_tag }}"
+
+  build-and-push:
+    name: Build and Push - ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: generate-version
+    strategy:
+      matrix:
+        include:
+          - service: frontend-service
+            image_name: clahan-frontend
+          - service: auth-service
+            image_name: clahan-auth
+          - service: admin-service
+            image_name: clahan-admin
+          - service: student-service
+            image_name: clahan-student
+          - service: exam-service
+            image_name: clahan-exam
+          - service: proctoring-service
+            image_name: clahan-proctoring
+          - service: notification-service
+            image_name: clahan-notification
+          - service: ai-service
+            image_name: clahan-ai
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Azure OIDC Login
         uses: azure/login@v2
@@ -36,7 +85,51 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Fetch SMTP details for notifications
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build Docker image
+        run: |
+          SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
+          SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
+          ACR_IMAGE="${{ env.ACR_REGISTRY }}/${{ matrix.image_name }}"
+
+          docker build \
+            --platform linux/amd64 \
+            -t ${ACR_IMAGE}:${SEMANTIC_TAG} \
+            -t ${ACR_IMAGE}:${SHA_TAG} \
+            -t ${ACR_IMAGE}:latest \
+            ./${{ matrix.service }}
+
+          echo "Built image with tags:"
+          echo "  ${ACR_IMAGE}:${SEMANTIC_TAG}"
+          echo "  ${ACR_IMAGE}:${SHA_TAG}"
+          echo "  ${ACR_IMAGE}:latest"
+
+      - name: Run Trivy scan before push
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "${{ env.ACR_REGISTRY }}/${{ matrix.image_name }}:${{ needs.generate-version.outputs.semantic_tag }}"
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          vuln-type: os
+          ignore-unfixed: true
+
+      - name: Push all tags to ACR
+        run: |
+          SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
+          SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
+          ACR_IMAGE="${{ env.ACR_REGISTRY }}/${{ matrix.image_name }}"
+
+          docker push ${ACR_IMAGE}:${SEMANTIC_TAG}
+          docker push ${ACR_IMAGE}:${SHA_TAG}
+          docker push ${ACR_IMAGE}:latest
+
+          echo "Pushed all tags successfully"
+
+      - name: Fetch SMTP details for notification
+        if: failure()
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
@@ -45,89 +138,172 @@ jobs:
           echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
           echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
 
-      - name: Send Deployment Started Email
-        continue-on-error: true
+      - name: Send Email on Failure
+        if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy - Deployment Started"
+          subject: "Clahan Academy CD Failed - Build/Push (${{ matrix.service }})"
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CD Pipeline
           body: |
-            A new deployment has been triggered and is initiating for clahaanacademy.online.
+            Docker build or push FAILED for: ${{ matrix.service }}
 
+            Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
+            SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
+            Branch       : ${{ github.ref_name }}
+            Commit       : ${{ github.sha }}
+            Author       : ${{ github.actor }}
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  approval-gate:
+    name: Approval Gate - Production
+    runs-on: ubuntu-latest
+    needs: [generate-version, build-and-push]
+    environment: production
+    steps:
+      - name: Azure OIDC Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch SMTP details for notification
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
+      - name: Send Approval Request Email
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: "Clahan Academy - Approval Needed for Production Deployment"
+          to: ${{ env.SMTP_FROM }}
+          from: Clahan Academy CD Pipeline
+          body: |
+            A new build is waiting for your approval to deploy to production.
+
+            Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
+            SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
             Triggered By : ${{ github.actor }}
             Branch       : ${{ github.ref_name }}
             Commit       : ${{ github.sha }}
 
-            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            TO APPROVE:
+            1. Open: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            2. Click "Review deployments"
+            3. Select "production"
+            4. Click "Approve and deploy"
 
-      - name: Get AKS credentials
-        run: |
-          az aks get-credentials \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name aks-clahan-academy \
-            --overwrite-existing
+            TO REJECT:
+            Same link, click "Reject"
 
-      - name: Install ArgoCD CLI
+      - name: Log approval
         run: |
-          curl -sSL -o /usr/local/bin/argocd \
-            https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-          chmod +x /usr/local/bin/argocd
+          echo "Deployment approved"
+          echo "Semantic tag : ${{ needs.generate-version.outputs.semantic_tag }}"
+          echo "SHA tag      : ${{ needs.generate-version.outputs.sha_tag }}"
+          echo "Approved by  : ${{ github.actor }}"
+          echo "Time         : $(date -u)"
 
-      - name: Check ArgoCD sync status
-        run: |
-          az aks command invoke \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name aks-clahan-academy \
-            --command "kubectl get application clahan-academy -n argocd"
+  update-helm:
+    name: Update Helm Manifests
+    runs-on: ubuntu-latest
+    needs: [generate-version, build-and-push, approval-gate]
+    steps:
+      - name: Checkout helm repo
+        uses: actions/checkout@v4
+        with:
+          repository: clahan-academy/clahan-academy-helm
+          token: ${{ secrets.MANIFEST_REPO_PAT || secrets.GITHUB_TOKEN }}
+          path: clahan-academy-helm
 
-      - name: Trigger ArgoCD sync
+      - name: Install yq
         run: |
-          az aks command invoke \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name aks-clahan-academy \
-            --command "kubectl annotate application clahan-academy \
-              -n argocd \
-              argocd.argoproj.io/refresh=hard \
-              --overwrite"
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
 
-      - name: Wait for rollout
+      - name: Update image tags in values.yaml
         run: |
-          az aks command invoke \
-            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-            --name aks-clahan-academy \
-            --command "kubectl rollout status deployment/clahan-frontend \
-              -n clahan-academy \
-              --timeout=300s"
+          SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
+          SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
+          cd clahan-academy-helm
 
-      - name: Run smoke tests
+          echo "Updating values.yaml"
+          echo "Semantic tag: ${SEMANTIC_TAG}"
+          echo "SHA tag     : ${SHA_TAG}"
+
+          VALUES="clahan-academy/values.yaml"
+          yq -i ".frontend.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".auth.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".admin.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".student.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".exam.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".proctoring.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".notification.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+          yq -i ".ai.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
+
+          echo "Updated values.yaml:"
+          cat ${VALUES}
+
+      - name: Commit and push to helm repo
         run: |
-          sleep 30
-          
-          ENDPOINTS=(
-            "https://clahaanacademy.online/api/auth/health"
-            "https://clahaanacademy.online/api/exams/health"
-            "https://clahaanacademy.online/api/student/health"
-          )
-          
-          for endpoint in "${ENDPOINTS[@]}"; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-              --max-time 30 "$endpoint" || echo "000")
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ $endpoint → $HTTP_CODE"
-            else
-              echo "⚠️  $endpoint → $HTTP_CODE (non-critical)"
-            fi
+          cd clahan-academy-helm
+          git config user.name "Clahan Academy CI"
+          git config user.email "ci@clahanacademy.online"
+
+          git add clahan-academy/values.yaml
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit - tags already up to date"
+            exit 0
+          fi
+
+          SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
+          SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
+          git commit -m "cd(production): deploy ${SEMANTIC_TAG} (${SHA_TAG}) [skip ci]"
+
+          for i in 1 2 3 4 5; do
+            git push && break
+            echo "Push failed, retry $i/5"
+            git pull --rebase origin main
+            sleep $((i * 2))
           done
 
-      - name: Send Deployment Success Email
+      - name: Azure OIDC Login
+        if: always()
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch SMTP details for notification
+        if: always()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
+      - name: Send Success Email
         if: success()
-        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -138,32 +314,36 @@ jobs:
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CD Pipeline
           body: |
-            The production deployment for clahaanacademy.online completed successfully!
+            Production deployment completed successfully.
 
+            Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
+            SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
             Triggered By : ${{ github.actor }}
             Branch       : ${{ github.ref_name }}
             Commit       : ${{ github.sha }}
 
-            Application URL: https://clahaanacademy.online
-            Namespace: clahan-academy
+            ArgoCD will sync to production namespace within 3 minutes.
+
+            Helm repo: https://github.com/clahan-academy/clahan-academy-helm
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-      - name: Send Deployment Failure Email
+      - name: Send Failure Email
         if: failure()
-        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CD Failed - Deployment Failed"
+          subject: "Clahan Academy CD Failed - Helm Update Failed"
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CD Pipeline
           body: |
-            The production deployment for clahaanacademy.online has FAILED.
+            GitOps manifest update FAILED.
 
+            Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
+            SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
             Triggered By : ${{ github.actor }}
             Branch       : ${{ github.ref_name }}
             Commit       : ${{ github.sha }}

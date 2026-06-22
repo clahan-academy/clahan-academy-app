@@ -1,167 +1,168 @@
 # .github/workflows/build.yml
 
-name: "CI — Build, Scan & Push"
+name: CI - Build and Security Scan
 
 on:
-  push:
-    branches: [main, "feature/**", "hotfix/**"]
-    paths:
-      - "frontend-service/**"
-      - "auth-service/**"
-      - "admin-service/**"
-      - "student-service/**"
-      - "exam-service/**"
-      - "proctoring-service/**"
-      - "notification-service/**"
-      - "ai-service/**"
-      - ".github/workflows/build.yml"
   pull_request:
-    branches: [main]
-    paths:
-      - "frontend-service/**"
-      - "auth-service/**"
-      - "admin-service/**"
-      - "student-service/**"
-      - "exam-service/**"
-      - "proctoring-service/**"
-      - "notification-service/**"
-      - "ai-service/**"
-      - ".github/workflows/build.yml"
-
-  workflow_dispatch:
-    inputs:
-      service:
-        description: "Service to build (all/frontend/auth/admin/student/exam/proctoring/notification/ai)"
-        required: false
-        default: "all"
+    branches: [main, dev]
 
 permissions:
-  id-token: write
-  contents: write
-  security-events: write
+  contents: read
   pull-requests: write
+  security-events: write
 
 env:
-  ACR_REGISTRY: ${{ github.ref_name == 'main' && 'acrclahan65bf2554.azurecr.io' || 'acrclahan65bf2554dev.azurecr.io' }}
-  KV_NAME: ${{ github.ref_name == 'main' && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
-  ACR_NAME: ${{ github.ref_name == 'main' && 'acrclahan65bf2554' || 'acrclahan65bf2554dev' }}
+  ACR_REGISTRY: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'acrclahan65bf2554.azurecr.io' || 'acrclahan65bf2554dev.azurecr.io' }}
+  KV_NAME: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
+  ACR_NAME: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'acrclahan65bf2554' || 'acrclahan65bf2554dev' }}
 
 jobs:
-  detect-changes:
-    name: "🔍 Detect Changed Services"
+  lint-and-test:
+    name: Lint and Test - ${{ matrix.service }}
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.detect.outputs.matrix }}
-      has_changes: ${{ steps.detect.outputs.has_changes }}
-
+    strategy:
+      matrix:
+        include:
+          - service: frontend-service
+            directory: frontend-service
+            language: node
+          - service: auth-service
+            directory: auth-service
+            language: node
+          - service: admin-service
+            directory: admin-service
+            language: node
+          - service: student-service
+            directory: student-service
+            language: node
+          - service: exam-service
+            directory: exam-service
+            language: node
+          - service: proctoring-service
+            directory: proctoring-service
+            language: node
+          - service: notification-service
+            directory: notification-service
+            language: node
+          - service: ai-service
+            directory: ai-service
+            language: python
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Detect changed services
-        id: detect
+      - name: Setup Node.js
+        if: matrix.language == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+
+      - name: Setup Python
+        if: matrix.language == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies (Node)
+        if: matrix.language == 'node'
+        working-directory: ${{ matrix.directory }}
+        run: npm ci --legacy-peer-deps
+
+      - name: Install dependencies (Python)
+        if: matrix.language == 'python'
+        working-directory: ${{ matrix.directory }}
         run: |
-          # Full service map
-          declare -A SERVICE_MAP=(
-            ["frontend"]="frontend-service:node"
-            ["auth"]="auth-service:node"
-            ["admin"]="admin-service:node"
-            ["student"]="student-service:node"
-            ["exam"]="exam-service:node"
-            ["proctoring"]="proctoring-service:node"
-            ["notification"]="notification-service:node"
-            ["ai"]="ai-service:python"
-          )
-          
-          ALL_SERVICES='[
-            {"service":"frontend","directory":"frontend-service","language":"node"},
-            {"service":"auth","directory":"auth-service","language":"node"},
-            {"service":"admin","directory":"admin-service","language":"node"},
-            {"service":"student","directory":"student-service","language":"node"},
-            {"service":"exam","directory":"exam-service","language":"node"},
-            {"service":"proctoring","directory":"proctoring-service","language":"node"},
-            {"service":"notification","directory":"notification-service","language":"node"},
-            {"service":"ai","directory":"ai-service","language":"python"}
-          ]'
-          
-          # Manual trigger
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            INPUT="${{ github.event.inputs.service }}"
-            if [ "$INPUT" == "all" ] || [ -z "$INPUT" ]; then
-              MATRIX=$(echo $ALL_SERVICES | jq -c '{"include": .}')
-              echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-              echo "has_changes=true" >> $GITHUB_OUTPUT
-              echo "✅ Manual trigger: all services"
-              exit 0
-            else
-              # Find specific service
-              ENTRY=$(echo $ALL_SERVICES | jq -c \
-                --arg svc "$INPUT" \
-                '[.[] | select(.service == $svc)]')
-              if [ "$(echo $ENTRY | jq length)" == "0" ]; then
-                echo "❌ Service '$INPUT' not found"
-                echo "has_changes=false" >> $GITHUB_OUTPUT
-                exit 0
-              fi
-              MATRIX=$(echo $ENTRY | jq -c '{"include": .}')
-              echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-              echo "has_changes=true" >> $GITHUB_OUTPUT
-              echo "✅ Manual trigger: $INPUT only"
-              exit 0
-            fi
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
           fi
-          
-          # Auto detect from git diff
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            CHANGED=$(git diff --name-only \
-              origin/${{ github.base_ref }}...HEAD)
+
+      - name: Run ESLint
+        if: matrix.language == 'node'
+        working-directory: ${{ matrix.directory }}
+        run: |
+          if npm run | grep -q "lint"; then
+            npm run lint
           else
-            CHANGED=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || \
-              git diff --name-only HEAD)
+            echo "No lint script found, skipping"
           fi
-          
-          echo "Changed files:"
-          echo "$CHANGED"
-          
-          # Build matrix of changed services
-          CHANGED_SERVICES=()
-          for SVC in frontend auth admin student exam proctoring notification ai; do
-            DIR=$(echo $ALL_SERVICES | jq -r \
-              --arg s "$SVC" '.[] | select(.service==$s) | .directory')
-            LANG=$(echo $ALL_SERVICES | jq -r \
-              --arg s "$SVC" '.[] | select(.service==$s) | .language')
-            
-            if echo "$CHANGED" | grep -q "^${DIR}/"; then
-              CHANGED_SERVICES+=("{\"service\":\"${SVC}\",\"directory\":\"${DIR}\",\"language\":\"${LANG}\"}")
-              echo "✅ Changed: $SVC"
-            fi
-          done
-          
-          if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
-            echo "ℹ️  No service changes detected"
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+
+      - name: Run Tests
+        if: matrix.language == 'node'
+        working-directory: ${{ matrix.directory }}
+        run: |
+          if npm run | grep -q "test"; then
+            npm test
           else
-            JSON_ARRAY=$(printf '%s,' "${CHANGED_SERVICES[@]}" | sed 's/,$//')
-            MATRIX="{\"include\":[$JSON_ARRAY]}"
-            echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "✅ ${#CHANGED_SERVICES[@]} service(s) changed"
+            echo "No test script found, skipping"
           fi
+
+      - name: Azure OIDC Login
+        if: failure()
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch SMTP details for notification
+        if: failure()
+        run: |
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
+          echo "SMTP_USER=$USER" >> $GITHUB_ENV
+          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+
+      - name: Send Email on Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ env.SMTP_USER }}
+          password: ${{ env.SMTP_PASS }}
+          subject: "Clahan Academy CI Failed - Lint/Test (${{ matrix.service }})"
+          to: ${{ env.SMTP_FROM }}
+          from: Clahan Academy CI Pipeline
+          body: |
+            Lint or Test failed for: ${{ matrix.service }}
+
+            Branch : ${{ github.ref_name }}
+            Commit : ${{ github.sha }}
+            Author : ${{ github.actor }}
+            PR     : ${{ github.event.pull_request.html_url }}
+
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   sonarcloud:
-    name: "📊 SonarCloud Quality Gate"
+    name: SonarCloud Analysis - ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.has_changes == 'true'
-
-    permissions:
-      id-token: write
-      contents: read
-
+    needs: lint-and-test
+    strategy:
+      matrix:
+        include:
+          - service: frontend-service
+            directory: frontend-service
+          - service: auth-service
+            directory: auth-service
+          - service: admin-service
+            directory: admin-service
+          - service: student-service
+            directory: student-service
+          - service: exam-service
+            directory: exam-service
+          - service: proctoring-service
+            directory: proctoring-service
+          - service: notification-service
+            directory: notification-service
+          - service: ai-service
+            directory: ai-service
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -183,16 +184,16 @@ jobs:
 
       - name: SonarCloud Scan
         uses: SonarSource/sonarcloud-github-action@master
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
         with:
+          projectBaseDir: ${{ matrix.directory }}
           args: >
-            -Dsonar.projectKey=clahan-academy
+            -Dsonar.projectKey=clahan-academy-${{ matrix.service }}
             -Dsonar.organization=clahan-academy
             -Dsonar.sources=.
             -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/__pycache__/**,**/venv/**,**/*.test.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
 
       - name: Fetch SMTP details for notification
         if: failure()
@@ -206,39 +207,59 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
-        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CI Failed - SonarCloud Scan"
+          subject: "Clahan Academy CI Failed - SonarCloud (${{ matrix.service }})"
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
-            SonarCloud analysis FAILED for Clahan Academy.
+            SonarCloud scan failed for: ${{ matrix.service }}
 
             Branch : ${{ github.ref_name }}
             Commit : ${{ github.sha }}
             Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            PR     : ${{ github.event.pull_request.html_url }}
 
-  snyk:
-    name: "🔒 Snyk — ${{ matrix.service }}"
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  snyk-scan:
+    name: Snyk Dependency Scan - ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: detect-changes
-    if: needs.detect-changes.outputs.has_changes == 'true'
+    needs: lint-and-test
     strategy:
-      fail-fast: true
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
-
-    permissions:
-      id-token: write
-      contents: read
-
+      matrix:
+        include:
+          - service: frontend-service
+            directory: frontend-service
+            language: node
+          - service: auth-service
+            directory: auth-service
+            language: node
+          - service: admin-service
+            directory: admin-service
+            language: node
+          - service: student-service
+            directory: student-service
+            language: node
+          - service: exam-service
+            directory: exam-service
+            language: node
+          - service: proctoring-service
+            directory: proctoring-service
+            language: node
+          - service: notification-service
+            directory: notification-service
+            language: node
+          - service: ai-service
+            directory: ai-service
+            language: python
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Azure OIDC Login
         uses: azure/login@v2
@@ -260,25 +281,26 @@ jobs:
         if: matrix.language == 'node'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+          node-version: '20'
 
       - name: Setup Python
         if: matrix.language == 'python'
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: Install dependencies (Node)
         if: matrix.language == 'node'
         working-directory: ${{ matrix.directory }}
-        run: npm ci --legacy-peer-deps
+        run: npm install --no-audit --no-fund --legacy-peer-deps
 
       - name: Install dependencies (Python)
         if: matrix.language == 'python'
         working-directory: ${{ matrix.directory }}
-        run: pip install -r requirements.txt
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
 
       - name: Setup Snyk CLI
         uses: snyk/actions/setup@master
@@ -338,7 +360,6 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
-        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -349,154 +370,60 @@ jobs:
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
-            Snyk dependency scan FAILED for service: ${{ matrix.service }}
+            Snyk scan failed for: ${{ matrix.service }}
 
             Branch : ${{ github.ref_name }}
             Commit : ${{ github.sha }}
             Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            PR     : ${{ github.event.pull_request.html_url }}
 
-  build:
-    name: "🐳 Build — ${{ matrix.service }}"
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  trivy-scan:
+    name: Trivy Container Scan - ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: [detect-changes, sonarcloud, snyk]
-    if: |
-      needs.detect-changes.outputs.has_changes == 'true' &&
-      needs.sonarcloud.result == 'success' &&
-      needs.snyk.result == 'success'
+    needs: lint-and-test
     strategy:
-      fail-fast: true
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
-    outputs:
-      sha: ${{ steps.meta.outputs.sha }}
-
-    permissions:
-      id-token: write
-      contents: read
-
+      matrix:
+        include:
+          - service: frontend-service
+            directory: frontend-service
+          - service: auth-service
+            directory: auth-service
+          - service: admin-service
+            directory: admin-service
+          - service: student-service
+            directory: student-service
+          - service: exam-service
+            directory: exam-service
+          - service: proctoring-service
+            directory: proctoring-service
+          - service: notification-service
+            directory: notification-service
+          - service: ai-service
+            directory: ai-service
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Azure OIDC Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Login to ACR
-        run: az acr login --name ${{ env.ACR_NAME }}
-
-      - name: Generate image metadata
-        id: meta
+      - name: Build Docker image for scanning
         run: |
-          SHA=$(git rev-parse --short HEAD)
-          echo "sha=$SHA" >> $GITHUB_OUTPUT
-          echo "image=${{ env.ACR_REGISTRY }}/clahan-${{ matrix.service }}" >> $GITHUB_OUTPUT
-          echo "🏷️  Image tag: $SHA"
+          docker build \
+            -t ${{ matrix.service }}:scan \
+            ./${{ matrix.directory }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./${{ matrix.directory }}
-          push: false
-          load: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha }}
-            ${{ steps.meta.outputs.image }}:latest
-          cache-from: |
-            type=registry,ref=${{ steps.meta.outputs.image }}:buildcache
-          cache-to: |
-            type=registry,ref=${{ steps.meta.outputs.image }}:buildcache,mode=max
-          labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=https://github.com/clahan-academy/clahan-academy-app
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-
-      - name: Save image for Trivy
-        run: |
-          mkdir -p /tmp/images
-          docker save ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha }} \
-            -o /tmp/images/image-${{ matrix.service }}.tar
-
-      - name: Upload image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-${{ matrix.service }}-${{ steps.meta.outputs.sha }}
-          path: /tmp/images/image-${{ matrix.service }}.tar
-          retention-days: 1
-
-      - name: Fetch SMTP details for notification
-        if: failure()
-        run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
-
-      - name: Send Email on Failure
-        if: failure()
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CI Failed - Docker Build (${{ matrix.service }})"
-          to: ${{ env.SMTP_FROM }}
-          from: Clahan Academy CI Pipeline
-          body: |
-            Docker container build FAILED for service: ${{ matrix.service }}
-
-            Branch : ${{ github.ref_name }}
-            Commit : ${{ github.sha }}
-            Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-  trivy:
-    name: "🛡️ Trivy — ${{ matrix.service }}"
-    runs-on: ubuntu-latest
-    needs: [detect-changes, build]
-    if: needs.detect-changes.outputs.has_changes == 'true'
-    strategy:
-      fail-fast: true
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
-
-    permissions:
-      id-token: write
-      contents: read
-      security-events: write
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: image-${{ matrix.service }}-${{ needs.build.outputs.sha }}
-          path: /tmp/images/
-
-      - name: Load Docker image
-        run: docker load -i /tmp/images/image-${{ matrix.service }}.tar
-
-      - name: Run Trivy vulnerability scan
+      - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.ACR_REGISTRY }}/clahan-${{ matrix.service }}:${{ needs.build.outputs.sha }}
+          image-ref: ${{ matrix.service }}:scan
           format: sarif
           output: trivy-${{ matrix.service }}.sarif
-          severity: CRITICAL,HIGH
-          exit-code: "0"
+          severity: HIGH,CRITICAL
+          exit-code: '1'
           ignore-unfixed: true
-          vuln-type: "os"
+          vuln-type: os
 
-      - name: Upload Trivy SARIF to Security tab
+      - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
@@ -523,188 +450,57 @@ jobs:
 
       - name: Send Email on Failure
         if: failure()
-        continue-on-error: true
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
           server_port: 465
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CI Failed - Trivy Scan (${{ matrix.service }})"
+          subject: "Clahan Academy CI Failed - Trivy (${{ matrix.service }})"
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CI Pipeline
           body: |
-            Trivy security scan FAILED for service: ${{ matrix.service }}. High or Critical vulnerabilities found.
+            Trivy container scan failed for: ${{ matrix.service }}
+            High or Critical OS vulnerabilities found. Merge is blocked.
 
             Branch : ${{ github.ref_name }}
             Commit : ${{ github.sha }}
             Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            PR     : ${{ github.event.pull_request.html_url }}
 
-  push:
-    name: "📦 Push — ${{ matrix.service }}"
+            Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  scan-summary:
+    name: PR Scan Summary
     runs-on: ubuntu-latest
-    needs: [detect-changes, build, trivy]
-    if: |
-      needs.detect-changes.outputs.has_changes == 'true' &&
-      needs.trivy.result == 'success' &&
-      github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
-    outputs:
-      image_tag: ${{ steps.push.outputs.image_tag }}
-
-    permissions:
-      id-token: write
-      contents: read
-
+    needs: [sonarcloud, snyk-scan, trivy-scan]
+    if: always()
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure OIDC Login
-        uses: azure/login@v2
+      - name: Comment PR with results
+        uses: actions/github-script@v7
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Login to ACR
-        run: az acr login --name ${{ env.ACR_NAME }}
-
-      - name: Download image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: image-${{ matrix.service }}-${{ needs.build.outputs.sha }}
-          path: /tmp/images/
-
-      - name: Push to ACR
-        id: push
-        run: |
-          SHA=$(git rev-parse --short HEAD)
-          IMAGE="${{ env.ACR_REGISTRY }}/clahan-${{ matrix.service }}"
-          
-          docker load -i /tmp/images/image-${{ matrix.service }}.tar
-          
-          docker push ${IMAGE}:${SHA}
-          docker tag ${IMAGE}:${SHA} ${IMAGE}:latest
-          docker push ${IMAGE}:latest
-          
-          echo "image_tag=${SHA}" >> $GITHUB_OUTPUT
-          echo "✅ Pushed ${IMAGE}:${SHA}"
-
-      - name: Fetch SMTP details for notification
-        if: failure()
-        run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
-
-      - name: Send Email on Failure
-        if: failure()
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CI Failed - Push to ACR (${{ matrix.service }})"
-          to: ${{ env.SMTP_FROM }}
-          from: Clahan Academy CI Pipeline
-          body: |
-            ACR Image push FAILED for service: ${{ matrix.service }}
-
-            Branch : ${{ github.ref_name }}
-            Commit : ${{ github.sha }}
-            Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-  update-helm:
-    name: "📝 Update Helm — ${{ matrix.service }}"
-    runs-on: ubuntu-latest
-    needs: [detect-changes, push]
-    if: |
-      needs.detect-changes.outputs.has_changes == 'true' &&
-      github.event_name != 'pull_request'
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.detect-changes.outputs.matrix) }}
-
-    permissions:
-      contents: write
-      id-token: write
-
-    steps:
-      - name: Checkout Helm Repo
-        uses: actions/checkout@v4
-        with:
-          repository: clahan-academy/clahan-academy-helm
-          token: ${{ secrets.MANIFEST_REPO_PAT || secrets.GITHUB_TOKEN }}
-          path: clahan-academy-helm
-
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-
-      - name: Update image tag in Helm values
-        run: |
-          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          VALUES="clahan-academy-helm/clahan-academy/values.yaml"
-          yq eval ".${{ matrix.service }}.image.tag = \"${SHA}\"" -i ${VALUES}
-          echo "✅ Updated ${{ matrix.service }} → ${SHA}"
-
-      - name: Commit and push
-        run: |
-          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-          cd clahan-academy-helm
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          git add clahan-academy/values.yaml
-          git diff --staged --quiet || git commit -m "chore: update ${{ matrix.service }} image to ${SHA} [skip ci]"
-          git push
-
-      - name: Azure OIDC Login
-        if: failure()
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Fetch SMTP details for notification
-        if: failure()
-        run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
-
-      - name: Send Email on Failure
-        if: failure()
-        continue-on-error: true
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ env.SMTP_USER }}
-          password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CI Failed - Update Helm GitOps (${{ matrix.service }})"
-          to: ${{ env.SMTP_FROM }}
-          from: Clahan Academy CI Pipeline
-          body: |
-            GitOps manifest update FAILED for service: ${{ matrix.service }}.
-
-            Branch : ${{ github.ref_name }}
-            Commit : ${{ github.sha }}
-            Author : ${{ github.actor }}
-            Run    : ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-
+          script: |
+            const sonar = '${{ needs.sonarcloud.result }}';
+            const snyk = '${{ needs.snyk-scan.result }}';
+            const trivy = '${{ needs.trivy-scan.result }}';
+            const status = (r) => r === 'success' ? 'PASSED' : 'FAILED';
+            const allPassed = sonar === 'success' && snyk === 'success' && trivy === 'success';
+            const body = [
+              '## Clahan Academy CI Scan Results',
+              '',
+              '| Check | Status |',
+              '|-------|--------|',
+              `| SonarCloud Code Quality | ${status(sonar)} |`,
+              `| Snyk Dependencies | ${status(snyk)} |`,
+              `| Trivy Container Scan (OS only) | ${status(trivy)} |`,
+              '',
+              allPassed
+                ? 'All checks passed. Safe to merge.'
+                : 'One or more checks failed. Fix issues before merging.'
+            ].join('\n');
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
