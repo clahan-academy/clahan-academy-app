@@ -9,7 +9,7 @@ RUN npm run build
 
 # Stage 2: Production environment
 FROM node:20-alpine AS runner
-# Upgrade OS packages to address CVEs in Alpine base image
+# Upgrade OS packages to address CVEs in Alpine base image 
 RUN apk upgrade --no-cache
 
 WORKDIR /app
