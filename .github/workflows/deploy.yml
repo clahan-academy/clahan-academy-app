@@ -154,6 +154,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure OIDC Login
+        if: secrets.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -161,6 +162,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Login to ACR
+        if: secrets.AZURE_CLIENT_ID != ''
         run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: Build Docker image
@@ -192,6 +194,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Push all tags to ACR
+        if: secrets.AZURE_CLIENT_ID != ''
         run: |
           SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
           SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
@@ -204,17 +207,19 @@ jobs:
           echo "Pushed all tags successfully"
 
       - name: Fetch SMTP details for notification
-        if: failure()
+        if: failure() && secrets.AZURE_CLIENT_ID != ''
         run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv || echo "")
+          if [ -n "$USER" ] && [ -n "$FROM" ]; then
+            echo "SMTP_USER=$USER" >> $GITHUB_ENV
+            echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+            echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          fi
 
       - name: Send Email on Failure
-        if: failure()
+        if: failure() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -243,6 +248,7 @@ jobs:
     environment: production
     steps:
       - name: Azure OIDC Login
+        if: secrets.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -250,15 +256,19 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
+        if: secrets.AZURE_CLIENT_ID != ''
         run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv || echo "")
+          if [ -n "$USER" ] && [ -n "$FROM" ]; then
+            echo "SMTP_USER=$USER" >> $GITHUB_ENV
+            echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+            echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          fi
 
       - name: Send Approval Request Email
+        if: env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -362,7 +372,7 @@ jobs:
           done
 
       - name: Azure OIDC Login
-        if: always()
+        if: always() && secrets.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -370,17 +380,19 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
-        if: always()
+        if: always() && secrets.AZURE_CLIENT_ID != ''
         run: |
-          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv)
-          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv)
-          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv)
-          echo "SMTP_USER=$USER" >> $GITHUB_ENV
-          echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
-          echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
+          PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
+          FROM=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-from --query value -o tsv || echo "")
+          if [ -n "$USER" ] && [ -n "$FROM" ]; then
+            echo "SMTP_USER=$USER" >> $GITHUB_ENV
+            echo "SMTP_PASS=$PASS" >> $GITHUB_ENV
+            echo "SMTP_FROM=$FROM" >> $GITHUB_ENV
+          fi
 
       - name: Send Success Email
-        if: success()
+        if: success() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
@@ -406,7 +418,7 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
       - name: Send Failure Email
-        if: failure()
+        if: failure() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         with:
           server_address: smtp.gmail.com
