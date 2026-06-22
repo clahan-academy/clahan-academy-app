@@ -3,7 +3,10 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Build"]
+    types:
+      - completed
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -26,6 +29,7 @@ jobs:
   detect-changes:
     name: "🔍 Detect Changed Services"
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     outputs:
       matrix: ${{ steps.detect.outputs.matrix }}
       has_changes: ${{ steps.detect.outputs.has_changes }}
