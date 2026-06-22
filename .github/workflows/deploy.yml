@@ -226,6 +226,7 @@ jobs:
       - name: Send Email on Failure
         if: failure() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -277,6 +278,7 @@ jobs:
       - name: Send Approval Request Email
         if: env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -403,6 +405,7 @@ jobs:
       - name: Send Success Email
         if: success() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 465
@@ -429,6 +432,7 @@ jobs:
       - name: Send Failure Email
         if: failure() && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
+        continue-on-error: true
         with:
           server_address: smtp.gmail.com
           server_port: 465
