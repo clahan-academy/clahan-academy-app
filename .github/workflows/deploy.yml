@@ -1,6 +1,6 @@
 # .github/workflows/deploy.yml
 
-name: CD - Build Push and Deploy
+name: Deploy
 
 on:
   push:
@@ -20,6 +20,7 @@ env:
   ACR_REGISTRY: acrclahan65bf2554.azurecr.io
   ACR_NAME: acrclahan65bf2554
   KV_NAME: kv-clahan-prod
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
 
 jobs:
   detect-changes:
@@ -154,7 +155,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure OIDC Login
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -162,7 +163,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Login to ACR
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         run: az acr login --name ${{ env.ACR_NAME }}
 
       - name: Build Docker image
@@ -194,7 +195,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Push all tags to ACR
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         run: |
           SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
           SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
@@ -207,7 +208,7 @@ jobs:
           echo "Pushed all tags successfully"
 
       - name: Fetch SMTP details for notification
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
@@ -248,7 +249,7 @@ jobs:
     environment: production
     steps:
       - name: Azure OIDC Login
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -256,7 +257,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
@@ -372,7 +373,7 @@ jobs:
           done
 
       - name: Azure OIDC Login
-        if: always() && secrets.AZURE_CLIENT_ID != ''
+        if: always() && env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -380,7 +381,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
-        if: always() && secrets.AZURE_CLIENT_ID != ''
+        if: always() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")

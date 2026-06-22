@@ -1,6 +1,6 @@
 # .github/workflows/build.yml
 
-name: CI - Build and Security Scan
+name: Build
 
 on:
   pull_request:
@@ -21,6 +21,7 @@ env:
   ACR_REGISTRY: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'acrclahan65bf2554.azurecr.io' || 'acrclahan65bf2554dev.azurecr.io' }}
   KV_NAME: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
   ACR_NAME: ${{ (github.ref_name == 'main' || github.base_ref == 'main') && 'acrclahan65bf2554' || 'acrclahan65bf2554dev' }}
+  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
 
 jobs:
   detect-changes:
@@ -169,7 +170,7 @@ jobs:
           fi
 
       - name: Azure OIDC Login
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -177,7 +178,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
@@ -224,7 +225,7 @@ jobs:
           fetch-depth: 0
 
       - name: Azure OIDC Login
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -232,7 +233,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get SonarCloud token from Key Vault
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         run: |
           TOKEN=$(az keyvault secret show \
             --vault-name ${{ env.KV_NAME }} \
@@ -258,7 +259,7 @@ jobs:
           SONAR_TOKEN: ${{ env.SONAR_TOKEN }}
 
       - name: Fetch SMTP details for notification
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
@@ -303,7 +304,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Azure OIDC Login
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -311,7 +312,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Get Snyk token from Key Vault
-        if: secrets.AZURE_CLIENT_ID != ''
+        if: env.AZURE_CLIENT_ID != ''
         run: |
           TOKEN=$(az keyvault secret show \
             --vault-name ${{ env.KV_NAME }} \
@@ -395,7 +396,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Fetch SMTP details for notification
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
@@ -464,7 +465,7 @@ jobs:
           category: trivy-${{ matrix.service }}
 
       - name: Azure OIDC Login
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -472,7 +473,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Fetch SMTP details for notification
-        if: failure() && secrets.AZURE_CLIENT_ID != ''
+        if: failure() && env.AZURE_CLIENT_ID != ''
         run: |
           USER=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-user --query value -o tsv || echo "")
           PASS=$(az keyvault secret show --vault-name ${{ env.KV_NAME }} --name smtp-pass --query value -o tsv || echo "")
