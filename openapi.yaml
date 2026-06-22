@@ -1,0 +1,246 @@
+openapi: 3.0.3
+info:
+  title: Clahan Academy V2 API Specifications
+  description: OpenAPI 3.0 specification documenting the REST APIs of Clahan Academy V2 microservices.
+  version: 2.0.0
+servers:
+  - url: https://clahaanacademy.online/api
+    description: Production API Gateway
+  - url: http://localhost:80/api
+    description: Local Dev Gateway
+
+paths:
+  /auth/register:
+    post:
+      summary: Register a new student account
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - fullName
+                - rollNumber
+                - collegeId
+                - departmentId
+                - year
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                fullName:
+                  type: string
+                rollNumber:
+                  type: string
+                collegeId:
+                  type: integer
+                departmentId:
+                  type: integer
+                batchId:
+                  type: integer
+                trainerId:
+                  type: integer
+                year:
+                  type: integer
+                githubProfile:
+                  type: string
+                linkedinProfile:
+                  type: string
+                profilePhotoUrl:
+                  type: string
+      responses:
+        '201':
+          description: Registration successful, OTP sent
+        '400':
+          description: Validation error or email/roll number already registered
+        '500':
+          description: Internal server error
+
+  /auth/verify-otp:
+    post:
+      summary: Verify account using OTP
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - otp
+              properties:
+                email:
+                  type: string
+                otp:
+                  type: string
+      responses:
+        '200':
+          description: Email verified successfully
+        '400':
+          description: Invalid or expired OTP
+
+  /auth/login:
+    post:
+      summary: Authenticate user and return tokens
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  user:
+                    type: object
+        '401':
+          description: Invalid credentials
+        '403':
+          description: Account suspended or unverified email
+
+  /auth/me:
+    get:
+      summary: Get details of currently logged-in user
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+        '401':
+          description: Unauthorized
+
+  /student/profile:
+    get:
+      summary: Get student profile details
+      tags:
+        - Student Service
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+
+  /exams:
+    get:
+      summary: List available exams
+      tags:
+        - Exam Service
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+
+  /exams/{examId}:
+    get:
+      summary: Get exam details and questions
+      tags:
+        - Exam Service
+      parameters:
+        - name: examId
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Unauthorized
+
+  /exams/{examId}/submit:
+    post:
+      summary: Submit exam answers
+      tags:
+        - Exam Service
+      parameters:
+        - name: examId
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Exam submitted successfully
+
+  /proctor/frame:
+    post:
+      summary: Submit webcam frame for proctoring analysis
+      tags:
+        - Proctoring Service
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - frame
+                - attemptId
+              properties:
+                frame:
+                  type: string
+                  description: Base64 encoded JPEG image frame
+                attemptId:
+                  type: string
+      responses:
+        '200':
+          description: Frame analysis result returning violations
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
