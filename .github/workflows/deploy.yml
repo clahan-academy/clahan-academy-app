@@ -246,12 +246,11 @@ jobs:
 
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-  approval-gate:
-    name: Approval Gate - ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'Production' || 'Development' }}
+  notify-approval:
+    name: Send Approval Notification
     runs-on: ubuntu-latest
     needs: [detect-changes, generate-version, build-and-push]
-    if: needs.detect-changes.outputs.has_changes == 'true'
-    environment: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'production' || 'development' }}
+    if: needs.detect-changes.outputs.has_changes == 'true' && (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main')
     steps:
       - name: Azure OIDC Login
         if: env.AZURE_CLIENT_ID != ''
@@ -276,7 +275,7 @@ jobs:
           fi
 
       - name: Send Approval Request Email
-        if: (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && env.SMTP_USER != '' && env.SMTP_FROM != ''
+        if: env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         continue-on-error: true
         with:
@@ -293,7 +292,7 @@ jobs:
             Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
             SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
             Triggered By : ${{ github.actor }}
-            Branch       : ${{ github.ref_name }}
+            Branch       : ${{ github.event.workflow_run.head_branch || github.ref_name }}
             Commit       : ${{ github.sha }}
 
             TO APPROVE:
@@ -305,9 +304,16 @@ jobs:
             TO REJECT:
             Same link, click "Reject"
 
+  approval-gate:
+    name: Approval Gate - ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'Production' || 'Development' }}
+    runs-on: ubuntu-latest
+    needs: [detect-changes, generate-version, build-and-push]
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    environment: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'production' || 'development' }}
+    steps:
       - name: Log approval
         run: |
-          echo "Deployment approved"
+          echo "Deployment approved or bypassed"
           echo "Semantic tag : ${{ needs.generate-version.outputs.semantic_tag }}"
           echo "SHA tag      : ${{ needs.generate-version.outputs.sha_tag }}"
           echo "Approved by  : ${{ github.actor }}"
