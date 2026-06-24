@@ -7,7 +7,7 @@ on:
     workflows: ["Build"]
     types:
       - completed
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       service:
@@ -20,9 +20,9 @@ permissions:
   contents: write
 
 env:
-  ACR_REGISTRY: acrclahan65bf2554.azurecr.io
-  ACR_NAME: acrclahan65bf2554
-  KV_NAME: kv-clahan-prod
+  ACR_REGISTRY: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'acrclahan65bf2554.azurecr.io' || 'acrclahan65bf2554dev.azurecr.io' }}
+  ACR_NAME: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'acrclahan65bf2554' || 'acrclahan65bf2554dev' }}
+  KV_NAME: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'kv-clahan-prod' || 'kv-clahan-65bf2554' }}
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
 
 jobs:
@@ -247,11 +247,11 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   approval-gate:
-    name: Approval Gate - Production
+    name: Approval Gate - ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'Production' || 'Development' }}
     runs-on: ubuntu-latest
     needs: [detect-changes, generate-version, build-and-push]
     if: needs.detect-changes.outputs.has_changes == 'true'
-    environment: production
+    environment: ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'production' || 'development' }}
     steps:
       - name: Azure OIDC Login
         if: env.AZURE_CLIENT_ID != ''
@@ -276,7 +276,7 @@ jobs:
           fi
 
       - name: Send Approval Request Email
-        if: env.SMTP_USER != '' && env.SMTP_FROM != ''
+        if: (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && env.SMTP_USER != '' && env.SMTP_FROM != ''
         uses: dawidd6/action-send-mail@v3
         continue-on-error: true
         with:
@@ -333,28 +333,33 @@ jobs:
           sudo chmod +x /usr/local/bin/yq
           yq --version
 
-      - name: Update image tags in values.yaml
+      - name: Update image tags in values files
         run: |
           SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
           SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
           cd clahan-academy-helm
 
-          echo "Updating values.yaml"
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          if [ "$BRANCH" = "main" ]; then
+            VALUES_FILE="clahan-academy/values-prod.yaml"
+          else
+            VALUES_FILE="clahan-academy/values-dev.yaml"
+          fi
+
+          echo "Updating file: ${VALUES_FILE}"
           echo "Semantic tag: ${SEMANTIC_TAG}"
           echo "SHA tag     : ${SHA_TAG}"
-
-          VALUES="clahan-academy/values.yaml"
 
           # Loop through only the changed services and update their tags dynamically
           SERVICES=$(echo '${{ needs.detect-changes.outputs.matrix }}' | jq -c '.include[]')
           for SVC_ENTRY in $SERVICES; do
             HELM_KEY=$(echo $SVC_ENTRY | jq -r '.service' | sed 's/-service//')
-            yq -i ".${HELM_KEY}.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES}
-            echo "✅ Updated ${HELM_KEY} to ${SEMANTIC_TAG}"
+            yq -i ".${HELM_KEY}.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES_FILE}
+            echo "✅ Updated ${HELM_KEY} to ${SEMANTIC_TAG} in ${VALUES_FILE}"
           done
 
-          echo "Updated values.yaml:"
-          cat ${VALUES}
+          echo "Updated file contents:"
+          cat ${VALUES_FILE}
 
       - name: Commit and push to helm repo
         run: |
@@ -362,7 +367,16 @@ jobs:
           git config user.name "Clahan Academy CI"
           git config user.email "ci@clahanacademy.online"
 
-          git add clahan-academy/values.yaml
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          if [ "$BRANCH" = "main" ]; then
+            VALUES_FILE="clahan-academy/values-prod.yaml"
+            ENV_NAME="production"
+          else
+            VALUES_FILE="clahan-academy/values-dev.yaml"
+            ENV_NAME="development"
+          fi
+
+          git add ${VALUES_FILE}
 
           if git diff --staged --quiet; then
             echo "No changes to commit - tags already up to date"
@@ -371,7 +385,7 @@ jobs:
 
           SEMANTIC_TAG="${{ needs.generate-version.outputs.semantic_tag }}"
           SHA_TAG="${{ needs.generate-version.outputs.sha_tag }}"
-          git commit -m "cd(production): deploy ${SEMANTIC_TAG} (${SHA_TAG}) [skip ci]"
+          git commit -m "cd(${ENV_NAME}): deploy ${SEMANTIC_TAG} (${SHA_TAG}) [skip ci]"
 
           for i in 1 2 3 4 5; do
             git push && break
@@ -411,19 +425,19 @@ jobs:
           server_port: 465
           username: ${{ env.SMTP_USER }}
           password: ${{ env.SMTP_PASS }}
-          subject: "Clahan Academy CD Success - Production Deployed"
+          subject: "Clahan Academy CD Success - ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'Production' || 'Development' }} Deployed"
           to: ${{ env.SMTP_FROM }}
           from: Clahan Academy CD Pipeline
           body: |
-            Production deployment completed successfully.
+            Deployment to ${{ (github.event.workflow_run.head_branch == 'main' || github.ref_name == 'main') && 'production' || 'development' }} completed successfully.
 
             Semantic Tag : ${{ needs.generate-version.outputs.semantic_tag }}
             SHA Tag      : ${{ needs.generate-version.outputs.sha_tag }}
             Triggered By : ${{ github.actor }}
-            Branch       : ${{ github.ref_name }}
+            Branch       : ${{ github.event.workflow_run.head_branch || github.ref_name }}
             Commit       : ${{ github.sha }}
 
-            ArgoCD will sync to production namespace within 3 minutes.
+            ArgoCD will sync to the respective namespace within 3 minutes.
 
             Helm repo: https://github.com/clahan-academy/clahan-academy-helm
 
