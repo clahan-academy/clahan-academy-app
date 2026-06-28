@@ -16,8 +16,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  issues: write
   security-events: write
   id-token: write
 
@@ -518,12 +516,19 @@ jobs:
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
   scan-summary:
-    name: PR Scan Summary
+    name: CI Scan Summary
     runs-on: ubuntu-latest
     needs: [detect-changes, sonarcloud, snyk-scan, trivy-scan]
     if: always() && needs.detect-changes.outputs.has_changes == 'true'
     steps:
-      - name: Comment PR with results
+      # Job summary instead of a PR comment: the old version relied on
+      # context.issue.number, which is only populated for pull_request
+      # events - every actual run of this pipeline has been workflow_dispatch
+      # or push, so it silently no-opped every single time, not a
+      # permissions problem. $GITHUB_STEP_SUMMARY works identically
+      # regardless of trigger type and needs no issues/pull-requests
+      # permission at all - it shows up directly on the Actions run page.
+      - name: Write scan summary
         uses: actions/github-script@v7
         with:
           script: |
@@ -547,13 +552,4 @@ jobs:
                 ? 'All checks passed. Safe to merge.'
                 : 'One or more checks failed. Fix issues before merging.'
             ].join('\n');
-            if (!context.issue.number) {
-              console.log('No issue/PR number found. Skipping comment creation.');
-              return;
-            }
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
+            await core.summary.addRaw(body).write();
