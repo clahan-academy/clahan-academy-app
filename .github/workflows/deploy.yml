@@ -27,7 +27,7 @@ env:
 
 jobs:
   detect-changes:
-    name: "🔍 Detect Changed Services"
+    name: "Detect Changed Services"
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     outputs:
@@ -59,21 +59,21 @@ jobs:
               MATRIX=$(echo $ALL_SERVICES | jq -c '{"include": .}')
               echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
               echo "has_changes=true" >> $GITHUB_OUTPUT
-              echo "✅ Manual trigger: all services"
+              echo "Manual trigger: all services"
               exit 0
             else
               ENTRY=$(echo $ALL_SERVICES | jq -c \
                 --arg svc "$INPUT" \
                 '[.[] | select(.service == $svc)]')
               if [ "$(echo $ENTRY | jq length)" == "0" ]; then
-                echo "❌ Service '$INPUT' not found"
+                echo "Service '$INPUT' not found"
                 echo "has_changes=false" >> $GITHUB_OUTPUT
                 exit 1
               fi
               MATRIX=$(echo $ENTRY | jq -c '{"include": .}')
               echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
               echo "has_changes=true" >> $GITHUB_OUTPUT
-              echo "✅ Manual trigger: $INPUT only"
+              echo "Manual trigger: $INPUT only"
               exit 0
             fi
           fi
@@ -93,12 +93,12 @@ jobs:
 
             if echo "$CHANGED" | grep -q "^${DIR}/" || echo "$CHANGED" | grep -q "^\.github/workflows/"; then
               CHANGED_SERVICES+=("{\"service\":\"${SVC}\",\"directory\":\"${DIR}\",\"language\":\"${LANG}\",\"image_name\":\"${IMG}\"}")
-              echo "✅ Service changed: $SVC"
+              echo "Service changed: $SVC"
             fi
           done
 
           if [ ${#CHANGED_SERVICES[@]} -eq 0 ]; then
-            echo "ℹ️ No service changes detected"
+            echo "No service changes detected"
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "matrix={\"include\":[]}" >> $GITHUB_OUTPUT
           else
@@ -106,7 +106,7 @@ jobs:
             MATRIX="{\"include\":[$JSON_ARRAY]}"
             echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
             echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "✅ ${#CHANGED_SERVICES[@]} service(s) changed"
+            echo "${#CHANGED_SERVICES[@]} service(s) changed"
           fi
 
   generate-version:
@@ -361,7 +361,7 @@ jobs:
           for SVC_ENTRY in $SERVICES; do
             HELM_KEY=$(echo $SVC_ENTRY | jq -r '.service' | sed 's/-service//')
             yq -i ".${HELM_KEY}.image.tag = \"${SEMANTIC_TAG}\"" ${VALUES_FILE}
-            echo "✅ Updated ${HELM_KEY} to ${SEMANTIC_TAG} in ${VALUES_FILE}"
+            echo "Updated ${HELM_KEY} to ${SEMANTIC_TAG} in ${VALUES_FILE}"
           done
 
           echo "Updated file contents:"
