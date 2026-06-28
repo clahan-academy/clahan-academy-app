@@ -197,6 +197,11 @@ jobs:
           severity: CRITICAL,HIGH
           vuln-type: os
           ignore-unfixed: true
+          # Same reasoning as build.yml's trivy-scan job: restrict to
+          # vulnerability scanning only, so a secret-scan false positive
+          # (Trivy scans for secrets by default) can't block an image push
+          # over something severity/ignore-unfixed was never going to filter.
+          scanners: vuln
 
       - name: Push all tags to ACR
         if: env.AZURE_CLIENT_ID != ''

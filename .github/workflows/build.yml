@@ -463,6 +463,13 @@ jobs:
           exit-code: '1'
           ignore-unfixed: true
           vuln-type: os
+          # Trivy runs secret scanning by default alongside vuln scanning.
+          # severity/ignore-unfixed only filter vulnerability findings, not
+          # secrets - a secret match (even a false positive, like a sample
+          # dataset URL token bundled inside scikit-image's own source)
+          # would still trip exit-code regardless of those settings. This
+          # step is only meant to check OS package vulnerabilities.
+          scanners: vuln
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v3
