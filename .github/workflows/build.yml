@@ -28,7 +28,7 @@ env:
 
 jobs:
   detect-changes:
-    name: "🔍 Detect Changed Services"
+    name: "Detect Changed Services"
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.detect.outputs.matrix }}
