@@ -366,6 +366,7 @@ jobs:
         run: |
           snyk test \
             --severity-threshold=high \
+            --fail-on=upgradable \
             --file=package.json \
             --json-file-output=snyk-report.json
         env:
@@ -377,6 +378,7 @@ jobs:
         run: |
           snyk test \
             --severity-threshold=high \
+            --fail-on=upgradable \
             --file=requirements.txt \
             --json-file-output=snyk-report.json
         env:
