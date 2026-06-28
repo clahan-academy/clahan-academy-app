@@ -193,7 +193,7 @@ jobs:
         with:
           image-ref: "${{ env.ACR_REGISTRY }}/${{ matrix.image_name }}:${{ needs.generate-version.outputs.semantic_tag }}"
           format: table
-          exit-code: '0'
+          exit-code: '1'
           severity: CRITICAL,HIGH
           vuln-type: os
           ignore-unfixed: true

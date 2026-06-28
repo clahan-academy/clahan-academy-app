@@ -17,6 +17,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
   security-events: write
   id-token: write
 
@@ -366,7 +367,7 @@ jobs:
           snyk test \
             --severity-threshold=high \
             --file=package.json \
-            --json-file-output=snyk-report.json || true
+            --json-file-output=snyk-report.json
         env:
           SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
 
@@ -377,12 +378,12 @@ jobs:
           snyk test \
             --severity-threshold=high \
             --file=requirements.txt \
-            --json-file-output=snyk-report.json || true
+            --json-file-output=snyk-report.json
         env:
           SNYK_TOKEN: ${{ env.SNYK_TOKEN }}
 
       - name: Convert Snyk Report to HTML
-        if: env.SNYK_TOKEN != ''
+        if: always() && env.SNYK_TOKEN != ''
         working-directory: ${{ matrix.directory }}
         run: |
           if [ -f snyk-report.json ]; then
@@ -459,7 +460,7 @@ jobs:
           format: sarif
           output: trivy-${{ matrix.service }}.sarif
           severity: HIGH,CRITICAL
-          exit-code: '0'
+          exit-code: '1'
           ignore-unfixed: true
           vuln-type: os
 
